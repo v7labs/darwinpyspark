@@ -6,7 +6,7 @@ setup(
     author="Harry Hands",
     author_email="harry.hands@v7labs.com",
     description="A package for interacting with the V7 platform via Pyspark",
-    url="https://github.com/v7labs/databricks/release",
+    url="https://github.com/v7labs/databricks",
     packages=find_packages(),
     install_requires=[
         "requests"
