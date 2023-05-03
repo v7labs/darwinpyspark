@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: darwinpyspark
+Version: 0.1.0
+Summary: A package for interacting with the V7 platform via Pyspark
+Home-page: https://github.com/v7labs/databricks
+Author: Harry Hands
+Author-email: harry.hands@v7labs.com
+License: UNKNOWN
+Platform: UNKNOWN
+License-File: LICENSE
+
+UNKNOWN
+
