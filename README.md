@@ -37,7 +37,7 @@ dp.upload_items(df)
 ```
 The upload_items method takes a PySpark DataFrame with columns 'object_url' (accessible open or presigned URL for the image) and 'file_name' (the name you want the file to be listed as in V7).
 
-Now, users would interact with this data in the V7 platform - e.g. create ML workflows, annotate images or files or test model performance etc.
+Now, users would interact with this data in the V7 platform - e.g. create ML workflows, annotate files such as images, videos, dicoms or test model performance etc.
 
 ### Downloading Data
 To download data from V7 as a PySpark DataFrame, use the download_export method:
