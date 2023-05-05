@@ -1,9 +1,13 @@
 import json
-import requests
-import urllib.request
 import urllib.parse
+import urllib.request
 import zipfile
 from io import BytesIO
+
+import requests
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import from_json
+
 
 class DarwinPyspark:
     def __init__(self, API_KEY, team_slug, dataset_slug):
@@ -21,14 +25,46 @@ class DarwinPyspark:
             DarwinPyspark class
         """
         self.headers = {
-                "accept": "application/json",
-                "Authorization": f"ApiKey {API_KEY}",
-            }
-        self.team_slug = team_slug.lower().strip().replace(" ",  '-')
-        self.dataset_slug = dataset_slug.lower().strip().replace(" ",  '-')
-        
+            "accept": "application/json",
+            "Authorization": f"ApiKey {API_KEY}",
+        }
+        self.team_slug = team_slug.lower().strip().replace(" ", "-")
+        self.dataset_slug = dataset_slug.lower().strip().replace(" ", "-")
+    
+    def upload_items(self, df):
+        """
+        Method to upload a pyspark dataframes data to V7
 
-    def data_registration(self, item_name):
+        Parameters
+        ----------
+            df (pyspark dataframe): A dataframe, with columns 'object_url' (accessible open or presigned url for the image) and 'file_name' (the name you want the file to be listed as in V7)
+
+        Returns
+        -------
+            None
+        """
+        df.select("file_name", "object_url").foreach(
+            lambda row: self._upload_item(row[0], row[1])
+        )
+    
+    def download_export(self, export_name):
+        """
+        Calls all download methods to get and write an export to a pyspark dataframe
+
+        Parameters
+        ----------
+            export_name (str): Name of the export in V7 that is to be downloaded
+
+        Returns
+        -------
+            export_df (pyspark dataframe): pyspark dataframe of the exported darwin json data
+        """
+        export_url = self._get_export_url(export_name)
+        # create a SparkSession object
+        spark = SparkSession.builder.appName("darwinpyspark").getOrCreate()
+        return self._extract_export(self._download_export_zip(export_url), spark)
+
+    def _data_registration(self, item_name):
         """
         Method to register items and slots
 
@@ -46,35 +82,24 @@ class DarwinPyspark:
         payload = {
             "items": [
                 {
-                    "slots": [
-                        {
-                            "tags": [],
-                            "file_name": item_name,
-                            "slot_name": "0"
-                        }
-                    ],
+                    "slots": [{"tags": [], "file_name": item_name, "slot_name": "0"}],
                     "name": item_name,
                     "layout": None,
                     "path": "",
-                    "tags": []
+                    "tags": [],
                 }
             ],
-            "dataset_slug": self.dataset_slug
+            "dataset_slug": self.dataset_slug,
         }
 
-        response = requests.post(url, headers=self.headers,json=payload)
+        response = requests.post(url, headers=self.headers, json=payload)
+        json_response = response.json()
 
-        json_response = json.loads(response.text)
+        if json_response["blocked_items"]:
+            raise RuntimeError(f"{json_response}")
+        return json_response["items"][0]["slots"][0]["upload_id"]
 
-        if not json_response["blocked_items"]:
-            upload_id = json_response["items"][0]["slots"][0]["upload_id"]
-        else:
-            upload_id = None
-
-        return upload_id
-        
-
-    def sign_upload(self, upload_id):
+    def _sign_upload(self, upload_id):
         """
         Method to sign upload for an item
 
@@ -90,12 +115,9 @@ class DarwinPyspark:
         url = f"https://darwin.v7labs.com/api/v2/teams/{self.team_slug}/items/uploads/{upload_id}/sign"
 
         response = requests.get(url, headers=self.headers)
-        upload_url = json.loads(response.text)["upload_url"]
+        return response.json()["upload_url"]
 
-        return upload_url
-
-
-    def upload_binary(self, item_path, upload_url):
+    def _upload_binary(self, item_path, upload_url):
         """
         Method to upload item data to the V7 platform
 
@@ -106,43 +128,43 @@ class DarwinPyspark:
 
         Returns
         -------
-            response_message (str): String message representing the response from the request to upload the bunary image data to V7
+            None
+
+        Rasies
+        --------
+            RuntimeError if upload failed
         """
 
-        encoded_url = urllib.parse.quote(item_path, safe=':/')
-        response = urllib.request.urlopen(encoded_url)
-        data = response.read()
+        encoded_url = urllib.parse.quote(item_path, safe=":/")
 
-        response = requests.put(url=upload_url,
-                            data=data,
-                            headers={'Content-Type': 'application/octet-stream'})
-                            
-        if response.ok:
-            response_message = f"{item_path} image data has been uploaded to V7"
-        else:
-            response_message = f"Issue uploading {item_path} data to V7"
+        with urllib.request.urlopen(encoded_url) as response:
+            data = response.read()
 
-        return response_message
+        response = requests.put(
+            url=upload_url,
+            data=data,
+            headers={"Content-Type": "application/octet-stream"},
+        )
 
+        if not response.ok:
+            raise RuntimeError(f"Issue uploading {item_path} data to V7")
 
-    def confirm(self, upload_id):
+    def _confirm(self, upload_id):
         """
         Method to confirm an upload for a particular upload_id
-        
+
         Parameters
         ----------
             upload_id (str): The generated id for the file to be loaded
 
         Returns
         -------
-            response (str): the response from the request to upload the bunary image data to V7
+            response (str): the response from the request to upload the binary image data to V7
         """
         url = f"https://darwin.v7labs.com/api/v2/teams/{self.team_slug}/items/uploads/{upload_id}/confirm"
-        response = requests.post(url, headers=self.headers)
-        return response
+        return requests.post(url, headers=self.headers)
 
-
-    def upload_item(self, item_name, item_path):
+    def _upload_item(self, item_name, item_path):
         """
         Method to call all upload methods and upload a specific item to V7
 
@@ -155,57 +177,15 @@ class DarwinPyspark:
         -------
             None
         """
-        upload_id = self.data_registration(item_name)
-        if upload_id != None:
-            upload_url = self.sign_upload(upload_id)
-            self.upload_binary(item_path, upload_url)
-            self.confirm(upload_id)
+        upload_id = self._data_registration(item_name)
+        if upload_id == None:
+            return
 
+        upload_url = self._sign_upload(upload_id)
+        self._upload_binary(item_path, upload_url)
+        self._confirm(upload_id)
 
-    def upload_items(self, df):
-        """
-        Method to upload a pyspark dataframes data to V7
-
-        Parameters
-        ----------
-            df (pyspark dataframe): A dataframe, with columns 'object_url' (accessible open or presigned url for the image) and 'file_name' (the name you want the file to be listed as in V7)
-
-        Returns
-        -------
-            None
-        """
-        df.select("file_name", "object_urls").foreach(lambda row: self.upload_item(row[0], row[1])) 
-
-        
-    def flatten_dict(self, d, parent_key=''):
-        """
-        Method to flatten the darwin export json to make ready for write to pyspark table
-
-        Parameters
-        ----------
-            d (dictionary): Python dictionary to be flattened
-            parent_key (str): String to prefix for the nested dictionary keys with
-
-        Returns
-        -------
-            flat_dict (dictionary): Flattaned dictionary to be written to a pyspark table
-        """
-        flat_dict = {}
-        for k, v in d.items():
-            new_key = f"{parent_key}_{k}" if parent_key else k
-            if k == 'annotations':
-                # Special case for annotations key
-                for i, annotation in enumerate(v):
-                    for ak, av in annotation.items():
-                        flat_dict[f"{new_key}_{i}_{ak}"] = av
-            elif isinstance(v, dict):
-                flat_dict.update(self.flatten_dict(v, new_key))
-            else:
-                flat_dict[new_key] = v
-        return flat_dict
-
-    
-    def get_export_url(self, export_name):  
+    def _get_export_url(self, export_name):
         """
         Method to get the url for the export to be downloaded
 
@@ -219,26 +199,21 @@ class DarwinPyspark:
         """
         url = f"https://darwin.v7labs.com/api/v2/teams/{self.team_slug}/datasets/{self.dataset_slug}/exports"
         response = requests.get(url, headers=self.headers)
-        if response.ok:
-            # The response content will be the exported dataset in JSON format
-            export_json = response.content
-        else:
-            # Handle the error response
-            pass
+        if not response.ok:
+            raise RuntimeError(f"Failed to fetch export '{export_name}': {response.status_code} - {response.content}")
 
+        exports_json = response.json()
         # get the export zip url
-        for export_json in json.loads(export_json.decode()):
+        for export_json in exports_json:
             if export_json["name"] == export_name:
-                download_url = export_json["download_url"]
-            else:
-                download_url = None
-        return download_url
+                return export_json["download_url"]
 
-    
-    def download_export_zip(self, download_url):
+        raise RuntimeError(f"No export with name '{export_name}' found")
+
+    def _download_export_zip(self, download_url):
         """
         From the export url, method to download the relevant darwin json export
-        
+
         Parameters
         ----------
             download_url (str): The url for the generated export that is to be downloaded
@@ -249,29 +224,13 @@ class DarwinPyspark:
         """
         # download the zip file from the URL
         response = urllib.request.urlopen(download_url)
+
         return zipfile.ZipFile(BytesIO(response.read()))
 
-    
-    # def extract_export(self, zipfile, sc, spark):
-    #     """
-    #     Method to write the darwin json results to a pyspark dataframe
-    #     """
-
-    #     # Set Databricks user agent tag
-    #     spark.conf.set("spark.databricks.agent.id", "v7-labs")
-
-    #     # extract the JSON files and read them into a DataFrame
-    #     json_files = []
-    #     for filename in zipfile.namelist():
-    #         if filename.endswith('.json'):
-    #             data = zipfile.read(filename)
-    #             json_files.append(self.flatten_dict(json.loads(data)))
-    #     return spark.read.json(sc.parallelize(json_files))
-
-    def extract_export(self, zipfile, spark):
+    def _extract_export(self, zipfile, spark):
         """
         Method to write the darwin json results to a pyspark dataframe
-                
+
         Parameters
         ----------
             zipfile (Zipfile): Zipped set of darwin export JSON's
@@ -288,9 +247,9 @@ class DarwinPyspark:
         # extract the JSON files and read them into a DataFrame
         json_files = []
         for filename in zipfile.namelist():
-            if filename.endswith('.json'):
+            if filename.endswith(".json"):
                 data = zipfile.read(filename)
-                json_files.append(data.decode('utf-8'))
+                json_files.append(data.decode("utf-8"))
 
         # Define the schema for the JSON data
         schema = "struct<"
@@ -303,30 +262,3 @@ class DarwinPyspark:
         df = df.select(from_json(df.value, schema).alias("data")).select("data.*")
 
         return df
-
-
-    def download_export(self, export_name):
-        """
-        Calls all download methods to get and write an export to a pyspark dataframe
-                        
-        Parameters
-        ----------
-            export_name (str): Name of the export in V7 that is to be downloaded
-
-        Returns
-        -------
-            export_df (pyspark dataframe): pyspark dataframe of the exported darwin json data
-        """
-        export_url = self.get_export_url(export_name)
-        if export_url != None:
-            # create a SparkSession object
-            spark = SparkSession.builder.appName("darwinpyspark").getOrCreate()
-
-            # create a SparkContext object
-            sc = spark.sparkContext
-
-            export_df = self.extract_export(self.download_export_zip(export_url), spark)
-        else:
-            export_df = "No Valid Export With That Name"
-
-        return export_df
