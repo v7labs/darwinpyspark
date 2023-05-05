@@ -15,7 +15,7 @@ pip install darwinpyspark
 ```
 
 ## Usage
-This framework is designed to be used alongside our python SDK, see examples in our docs [here](https://docs.v7labs.com/docs/use-the-darwin-python-library-to-manage-your-data).
+This framework is designed to be used alongside our python SDK, see examples of darwin-py in our docs [here](https://docs.v7labs.com/docs/use-the-darwin-python-library-to-manage-your-data).
 
 To get started with DarwinPyspark, you'll first need to create a DarwinPyspark instance with your V7 API key, team slug, and dataset slug:
 
