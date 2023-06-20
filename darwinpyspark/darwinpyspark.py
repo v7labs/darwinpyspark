@@ -6,7 +6,7 @@ from io import BytesIO
 
 import requests
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json
+from pyspark.sql.functions import from_json, current_timestamp, col
 
 
 class DarwinPyspark:
@@ -30,7 +30,7 @@ class DarwinPyspark:
         }
         self.team_slug = team_slug.lower().strip().replace(" ", "-")
         self.dataset_slug = dataset_slug.lower().strip().replace(" ", "-")
-    
+
     def upload_items(self, df):
         """
         Method to upload a pyspark dataframes data to V7
@@ -46,7 +46,7 @@ class DarwinPyspark:
         df.select("file_name", "object_url").foreach(
             lambda row: self._upload_item(row[0], row[1])
         )
-    
+
     def download_export(self, export_name):
         """
         Calls all download methods to get and write an export to a pyspark dataframe
@@ -62,7 +62,28 @@ class DarwinPyspark:
         export_url = self._get_export_url(export_name)
         # create a SparkSession object
         spark = SparkSession.builder.appName("darwinpyspark").getOrCreate()
-        return self._extract_export(self._download_export_zip(export_url), spark)
+        export_df = self._extract_export(
+            self._download_export_zip(export_url), spark
+        ).withColumn("export_date", current_timestamp())
+        col_order = [
+            "item_id",
+            "item_name",
+            "dataset_id",
+            "dataset_slug",
+            "team_slug",
+            "annotations",
+            "item",
+            "schema_ref",
+            "export_date",
+        ]
+        return export_df.select(
+            *col_order,
+            *[
+                col(col_name)
+                for col_name in export_df.columns
+                if col_name not in col_order
+            ],
+        )
 
     def _data_registration(self, item_name):
         """
@@ -200,7 +221,9 @@ class DarwinPyspark:
         url = f"https://darwin.v7labs.com/api/v2/teams/{self.team_slug}/datasets/{self.dataset_slug}/exports"
         response = requests.get(url, headers=self.headers)
         if not response.ok:
-            raise RuntimeError(f"Failed to fetch export '{export_name}': {response.status_code} - {response.content}")
+            raise RuntimeError(
+                f"Failed to fetch export '{export_name}': {response.status_code} - {response.content}"
+            )
 
         exports_json = response.json()
         # get the export zip url
@@ -248,8 +271,25 @@ class DarwinPyspark:
         json_files = []
         for filename in zipfile.namelist():
             if filename.endswith(".json"):
-                data = zipfile.read(filename)
-                json_files.append(data.decode("utf-8"))
+                data = json.loads(zipfile.read(filename).decode("utf-8"))
+                try:
+                    data["dataset_slug"] = data["item"]["source_info"]["dataset"]["slug"]
+                    data["dataset_id"] = data["item"]["source_info"]["dataset"]["dataset_management_url"].split("/")[-2]
+                    data["item_id"] = data["item"]["source_info"]["item_id"]
+                    data["item_name"] = data["item"]["name"]
+                    data["team_slug"] = data["item"]["source_info"]["team"]["slug"]
+                    del (
+                        data["item"]["source_info"]["dataset"]["slug"],
+                        data["item"]["source_info"]["item_id"],
+                        data["item"]["name"],
+                        data["item"]["source_info"]["team"]["slug"],
+                        data["version"],
+                    )
+                except KeyError as e:
+                    raise KeyError(
+                        f"Required keys are missing in the dictionary, try creating the export again and specify version='2.0': {str(e)} key missing"
+                    )
+                json_files.append(json.dumps(data))
 
         # Define the schema for the JSON data
         schema = "struct<"
