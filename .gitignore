@@ -1,8 +1,18 @@
+# credentials — never commit
 .env
-.env.example
-.env.local
-.env.staging
-.DS_Store
+
+# local artifacts
+seed_data/
+.venv/
+venv/
 __pycache__/
-darwinpyspark.egg-info/
-dist/
+*.pyc
+.DS_Store
+
+# terraform state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.auto.tfvars.sample
+terraform/optional-webhook/lambda/*.zip

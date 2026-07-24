@@ -1,0 +1,10 @@
+# Databricks notebooks are plain .py source files that rely on runtime-injected
+# globals (dbutils, spark, display) — tell ruff about them instead of ignoring
+# undefined-name errors wholesale.
+builtins = ["dbutils", "spark", "display", "sc", "sqlContext"]
+
+line-length = 120
+
+[lint]
+# notebooks re-import between cells by design
+ignore = ["E402"]
