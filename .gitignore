@@ -15,4 +15,3 @@ __pycache__/
 *.tfstate.*
 *.tfvars
 !*.auto.tfvars.sample
-terraform/optional-webhook/lambda/*.zip

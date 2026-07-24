@@ -115,15 +115,6 @@ annotated list). Highlights:
 | `TARGET_TABLE` | Delta table for annotations (`catalog.schema.table`) |
 | `SYNC_SCHEDULE_CRON` | Optional Quartz cron for the recurring sync |
 
-## Media type notes
-
-| Type | Support |
-|---|---|
-| Images (png/jpg/tiff/bmp) | ✅ |
-| DICOM (incl. multi-slice) | ✅ |
-| PDF | ✅ |
-| Video (mp4/avi/mov) | ✅ — requires server-side video processing to be enabled for your team on external storage. If registration returns `UNPROCESSED_VIDEO_REGISTRATION_DISABLED`, contact V7 support. The register notebook submits videos separately so a gated video never fails the rest of the batch. |
-
 ## Troubleshooting
 
 | Symptom | Cause / fix |

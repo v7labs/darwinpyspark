@@ -32,10 +32,6 @@ bucket policy and key policy granting Darwin's external-storage role — i.e. th
 exact setup an enterprise customer needs (the key-policy statement in
 `terraform/main.tf` doubles as copy-paste material for customers).
 
-`terraform/optional-webhook/` is a separate root module with a webhook-stage →
-Lambda → landing-bucket pipeline for streaming sync. It is optional; the
-scheduled export job is the primary sync path.
-
 ## 2. Seed test media
 
 ```bash
