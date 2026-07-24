@@ -99,5 +99,3 @@ resource "aws_s3_bucket_cors_configuration" "source" {
   }
 }
 
-# Phase D (webhook stage -> Lambda -> landing bucket) is DEFERRED.
-# When needed, apply terraform/optional-webhook/ as a separate root module.
